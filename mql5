@@ -1,0 +1,154 @@
+mql5
+//+------------------------------------------------------------------+
+//|                                         Genesis EA              |
+//|                                  Developed by Forex Robot Easy Team |
+//|                                             forexroboteasy.com  |
+//+------------------------------------------------------------------+
+
+// Global variables
+input double lots = 0.01; // Specify lot size
+input double stopLoss = 100; // Specify stop loss in points
+input double takeProfit = 200; // Specify take profit in points
+input double averageValue = 50; // Specify average overbought/oversold value
+input int maxOrders = 5; // Specify maximum number of orders in the series
+int totalOrders = 0; // Total number of orders in the current series
+
+//+------------------------------------------------------------------+
+//| Custom Functions                                                  |
+//+------------------------------------------------------------------+
+
+// Function to open a new order
+void OpenOrder(int direction)
+{
+   double price = direction == 1 ? Ask : Bid; // Get current price
+   int slippage = MarketInfo(Symbol(), MODE_SPREAD); // Get current spread
+   int ticket = 0; // Order ticket number
+   
+   // Open the order
+   ticket = OrderSend(Symbol(), direction, lots, price, slippage, price - stopLoss * Point, price + takeProfit * Point, 'Genesis EA', MagicNumber);
+   
+   // Check if the order was opened successfully
+   if(ticket > 0)
+   {
+      totalOrders++; // Increment total orders counter
+      Print('Order opened successfully: ', ticket);
+   }
+   else
+   {
+      Print('Failed to open order. Error code: ', GetLastError());
+   }
+}
+
+// Function to close all orders in the series
+void CloseSeries()
+{
+   for(int i = OrdersTotal() - 1; i >= 0; i--)
+   {
+      if(OrderSelect(i, SELECT_BY_POS, MODE_TRADES))
+      {
+         if(OrderMagicNumber() == MagicNumber)
+         {
+            OrderClose(OrderTicket(), OrderLots(), Bid, slippage, CLR_NONE);
+         }
+      }
+   }
+   totalOrders = 0; // Reset total orders counter
+   Print('All orders closed');
+}
+
+//+------------------------------------------------------------------+
+//| Expert initialization function                                   |
+//+------------------------------------------------------------------+
+int OnInit()
+{
+   // Set the required symbol and timeframe
+   if(Symbol() != 'EURUSD' && Symbol() != 'AUDUSD' && Symbol() != 'AUDCAD' && Symbol() != 'EURGBP' && Symbol() != 'GBPUSD' && Symbol() != 'GBPCAD' && Symbol() != 'GBPCHF')
+   {
+      Print('Invalid symbol. Please use one of the recommended pairs.');
+      return INIT_FAILED;
+   }
+   if(Period() != PERIOD_H1)
+   {
+      Print('Invalid timeframe. Please use the H1 timeframe.');
+      return INIT_FAILED;
+   }
+   
+   // Set the magic number for the orders
+   MagicNumber = 123456;
+   
+   return INIT_SUCCEEDED;
+}
+
+//+------------------------------------------------------------------+
+//| Expert tick function                                             |
+//+------------------------------------------------------------------+
+void OnTick()
+{
+   double currentPrice = Ask; // Get current price
+   double previousPrice = iMA(Symbol(), Period(), 1, 0, MODE_EMA, PRICE_CLOSE, 1); // Get previous price
+   
+   // Check if the trend is ready to reverse
+   if(currentPrice >= averageValue && previousPrice < averageValue)
+   {
+      if(totalOrders == 0)
+      {
+         OpenOrder(1); // Open the first order in the series
+      }
+      else if(totalOrders < maxOrders)
+      {
+         OpenOrder(1); // Open additional orders in the same direction
+      }
+   }
+   else if(currentPrice <= -averageValue && previousPrice > -averageValue)
+   {
+      if(totalOrders == 0)
+      {
+         OpenOrder(-1); // Open the first order in the series
+      }
+      else if(totalOrders < maxOrders)
+      {
+         OpenOrder(-1); // Open additional orders in the same direction
+      }
+   }
+   
+   // Check if the series of orders needs to be closed
+   if(totalOrders > 0)
+   {
+      bool closeSeries = false; // Flag to indicate whether to close the series
+      
+      // Check if the series of orders has a positive value
+      for(int i = OrdersTotal() - 1; i >= 0; i--)
+      {
+         if(OrderSelect(i, SELECT_BY_POS, MODE_TRADES))
+         {
+            if(OrderMagicNumber() == MagicNumber)
+            {
+               if(OrderProfit() > 0)
+               {
+                  closeSeries = true;
+               }
+               else
+               {
+                  closeSeries = false;
+                  break;
+               }
+            }
+         }
+      }
+      
+      // Close the series of orders if necessary
+      if(closeSeries)
+      {
+         CloseSeries();
+      }
+   }
+}
+
+//+------------------------------------------------------------------+
+//| Expert deinitialization function                                 |
+//+------------------------------------------------------------------+
+void OnDeinit(const int reason)
+{
+   // Clean up any remaining open orders
+   CloseSeries();
+}
